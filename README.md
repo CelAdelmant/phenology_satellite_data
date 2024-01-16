@@ -37,36 +37,14 @@ and uses the output of other dedicated repositories:
 ### Project Organization
 
 ```text
-...
+.
 ├── data
-│   ├── derived v                derived data, created by scripts
-│   ├── fits                       model fits (brms .rds objects)
-│   └── raw                         original data, never modified
-├── output
-│   └── figures
-├── R                                          reusable functions
-│   ├── io.R
-│   ├── rplot.R
-│   └── utils.R
-├── renv 
-├── scripts                        code to reproduce the analysis
-│   ├── maps
-│   ├── models
-│   │   ├── fit
-│   │   ├── plot
-│   │   └── report
-│   └── plots                extra plots (supplementary material)
-├── scripts
-│   ├── setup
-│   └── pipeline.sh
-...
-├── .Rprofile                             main configuration file
-├── config.yml                                 configuration file
-├── dependencies.R                               IDE dependencies
-├── LICENSE.md
-├── README.md
-├── renv.lock                     lockfile detailing dependencies
-└── birdsong-demography.Rproj                RStudio project file
+│   ├── derived
+│   │   └── satellite
+│   └── raw
+│       ├── satellite
+│       └── shapefiles
+
 ```
 
 ## Getting Started
