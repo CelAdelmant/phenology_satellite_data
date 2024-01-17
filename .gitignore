@@ -192,8 +192,10 @@ flycheck_*.el
 
 # network security
 /network-security.data
-data/raw/satellite/MCD_2001.hdf
-data/raw/satellite/MCD_2002.hdf
-data/raw/shapefiles/OKE_nestshape.kml
-data/raw/shapefiles/WYT_patch.kml
-resources/site_name_quadrant.csv
+
+
+# spatial files
+
+*.hdf
+*.tif
+*.kml
