@@ -8,69 +8,155 @@
 
 # ONLY RUN IN ARC COMPUTERS -
 
+
+# ──── LIBRARIES AND IMPORTS ──────────────────────────────────────────────────
+
 # loading packages
-library(dplyr)
-library(tidyr)
-library(sf)
-library(raster)
-library(terra)
-library(gdalUtilities)
-library(ggplot2)
-library(rasterVis)
-library(lubridate)
+# library(dplyr)
+# library(tidyr)
+# library(sf)
+# library(terra)
+# library(gdalUtilities)
+# library(ggplot2)
+# library(rasterVis)
+# library(lubridate)
 
-# setting working directory
-setwd("C:\\Users\\newc6032\\OneDrive - Nexus365\\Documents\\ArcGIS\\Projects\\Tree_Phenology\\Satellite images\\")
+config <- config::get()
 
-########################## Preparing rasters ############################################
+# ──── PARALLEL SETUP ─────────────────────────────────────────────────────────
+
+library(future)
+plan("multisession", workers = future::availableCores())
+
+progressr::handlers(progressr::handler_pbcol(
+    adjust = 1.0,
+    complete = function(s) cli::bg_red(cli::col_black(s)),
+    incomplete = function(s) cli::bg_cyan(cli::col_black(s))
+))
+
+# ──── FUNCTION DEFINITIONS ───────────────────────────────────────────────────
+
+
+# Function to extract subdatasets of interest from HDF files
+extract_subdatasets <- function(hdf_file, subdatasets) {
+    file_name <- gsub("\\..*$", "", basename(hdf_file))
+    year <- substr(file_name, 5, 8)
+
+    gdalinfo_output <- gdalUtilities::gdalinfo(hdf_file, quiet = TRUE)
+
+    subdataset_lines <- sub(
+        "^\\s*SUBDATASET_\\d+_NAME=", "",
+        grep("^\\s*SUBDATASET_\\d+_NAME",
+            strsplit(gdalinfo_output, "\n")[[1]],
+            value = TRUE
+        )
+    )
+
+    subdataset_lines <- subdataset_lines[grep(paste0(
+        paste0(subdatasets, collapse = "|"), "$"
+    ), subdataset_lines)]
+
+    return(list(
+        file_name = file_name, year = year,
+        subdataset_lines = subdataset_lines
+    ))
+}
+
+
+# Function to extract and save the subdataset as a projected GeoTIFF
+save_subdataset <- function(sub, layers, quadrant_name, wgs1984) {
+    gdal_subdataset <- layers$subdataset_lines[grep(
+        paste0(":\\s*", sub, "$"),
+        layers$subdataset_lines
+    )]
+
+    out_dir <- file.path(
+        config$path$derived_data, "satellite", quadrant_name,
+        layers$year
+    )
+    if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+    dst_name <- paste0(layers$file_name, "_", sub, ".tif")
+    out_file <- file.path(out_dir, dst_name)
+    gdalUtilities::gdal_translate(gdal_subdataset, dst_dataset = out_file)
+    raster_data <- terra::rast(out_file, wgs1984)
+
+    out_name <- paste0(layers$file_name, "_", sub, "_proj.tif")
+    terra::writeRaster(raster_data,
+        filename = file.path(out_dir, out_name),
+        overwrite = TRUE
+    )
+
+    file.remove(out_file)
+    file.remove(paste0(out_file, ".aux.xml"))
+}
+
+hdf_progress_msg <- function(hdf_file, layers) {
+    message <- paste(
+        "Processing", basename(hdf_file), "in",
+        basename(dirname(hdf_file)),
+        ":", length(layers$subdataset_lines), "subdatasets)"
+    )
+    return(message)
+}
+
+
+
+
+# ──── PREPROCESS HDF FILES ───────────────────────────────────────────────────
 # Here, I create rasters from the HDF files downloaded from EarthDataSearch
 
-# Defining subdatasets to run for-loop through (I do not include NumCycles as I am not interested in this dataset)
+
+# Defining subdatasets to extract
 subdatasets <- c(
     "Greenup", "MidGreenup", "Peak", "Maturity",
     "Senescence", "MidGreendown", "Dormancy", "EVI_Minimum",
     "EVI_Amplitude", "EVI_Area"
 )
 
-# Defining projection as wgs1984
+# Defining projection
 wgs1984 <- "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"
 
-# Defining directories of input files
-input_MCD_dir <- "C:\\Users\\newc6032\\OneDrive - Nexus365\\Documents\\ArcGIS\\Projects\\Tree_Phenology\\Satellite images" # this is where all of the original hdf files are, but they are in seperate folders for each quadrant
-MCD_quadrants <- list.dirs(input_MCD_dir, full.names = TRUE, recursive = FALSE) # this output shows all of the different quadrant folders
+# Get the list of MCD quadrants
+mcd_quadrants <- list.dirs(
+    file.path(config$path$raw_data, "satellite"),
+    full.names = TRUE, recursive = FALSE
+)
 
-# For loop to extract raster subdatasets of interest from the hdf files
-for (MCD_quadrant in MCD_quadrants) {
-    # Extracting the name of the folder for output
-    MCD_quadrant_name <- tools::file_path_sans_ext(basename(MCD_quadrant))
-    # Listing files in MCD quadrant folder
-    hdf_files <- list.files(MCD_quadrant, pattern = "*.hdf", full.names = TRUE)
+# Main processing step
+
+# Loop through each MCD quadrant
+for (mcd_quadrant in mcd_quadrants) {
+    quadrant_name <- basename(mcd_quadrant)
+    hdf_files <- list.files(mcd_quadrant,
+        pattern = "*.hdf",
+        full.names = TRUE
+    )
 
     # Loop through each HDF file
     for (hdf_file in hdf_files) {
-        # Extracting the filename without extension
-        file_name <- tools::file_path_sans_ext(basename(hdf_file))
-        year <- substr(file_name, 5, 8)
-        # Extracting sub-dataset name
-        gdalinfo_output <- gdalinfo(paste0(file_name, ".hdf"))
-        gdalinfo_lines <- strsplit(gdalinfo_output, "\n")[[1]] # splitting the text by lines
-        subdataset_lines <- grep("^\\s*SUBDATASET_\\d+_NAME", gdalinfo_lines, value = TRUE) # extracting lines containing subdataset names
-        subdataset_lines <- gsub("^\\s*SUBDATASET_\\d+_NAME=", "", subdataset_lines) # extract names of subdatasets
+        layers <- extract_subdatasets(hdf_file, subdatasets)
+        message <- hdf_progress_msg(hdf_file, layers)
 
-        # Creating for-loop to run through each subdataset and translate to .tif, project to WGS1984 and write as a projected GeoTiFF
-        for (sub in subdatasets) {
-            gdal_subdataset <- paste0(subdataset_lines)
-            dst_name <- paste0(file_name, "_", sub, ".tif")
-            gdal_translate(gdal_subdataset, dst_dataset = dst_name) # converting subdataset to .tif
-            raster_data <- raster(dst_name) # creating a raster object from the .tif file
-            raster_proj <- projectRaster(raster_data, crs = wgs1984) # resampling the raster using the projection string
-            writeRaster(raster_proj, filename = paste0("C:\\Users\\newc6032\\OneDrive - Nexus365\\Documents\\ArcGIS\\Projects\\Tree_Phenology\\Processed Satellite images\\", MCD_quadrant_name, "\\", year, "\\", file_name, "_", sub, "_proj.tif")) # writing the projected raster to a new .tif file
-        }
+        progressr::with_progress({
+            p <- progressr::progressor(
+                steps = length(subdatasets)
+            )
+            # Save each layer as a projected GeoTIFF
+            furrr::future_map(subdatasets, function(sub) {
+                save_subdataset(sub, layers, quadrant_name, wgs1984)
+                p(message = message)
+            }, .options = furrr::furrr_options(seed = TRUE))
+        })
     }
 }
+
+
 # The output is 10 .tif files per hdf file, each depicting a single layer of the multilayer raster hdf files
-# These are all saved in their respective folders (MCD Quadrant --> year --> //)
+# These are all saved in their respective folders (mcd Quadrant --> year --> //)
 # I then use these subdatasets for the analysis below
+
+
 
 ###############################################################################
 ############################ Processing tif files #############################
@@ -80,8 +166,8 @@ for (MCD_quadrant in MCD_quadrants) {
 # for each woodland in my dataset.
 
 # Defining directories of output
-# MCD directories
-processed_MCD_dir <- "C:\\Users\\newc6032\\OneDrive - Nexus365\\Documents\\ArcGIS\\Projects\\Tree_Phenology\\Processed Satellite Images test\\" # thi is where the processed raster subdatasets are stored
+# mcd directories
+processed_mcd_dir <- "C:\\Users\\newc6032\\OneDrive - Nexus365\\Documents\\ArcGIS\\Projects\\Tree_Phenology\\Processed Satellite Images test\\" # thi is where the processed raster subdatasets are stored
 setwd("C:\\Users\\newc6032\\OneDrive - Nexus365\\Documents\\ArcGIS\\Projects\\Tree_Phenology\\Processed Satellite images test") # here I set te working directory
 # shapefile directories
 shapefiles_dir <- "C:\\Users\\newc6032\\OneDrive - Nexus365\\Documents\\ArcGIS\\Projects\\Tree_Phenology\\Shapefiles extracted test" # this is where the shapefiles for each forest are stored
@@ -115,7 +201,7 @@ for (shapefile in shapefiles) {
 
     for (year in years) {
         # listing tif files within the quadrant folder of interest
-        tif_files <- list.files(paste0(processed_MCD_dir, quadrant_folder, "\\", year, "\\", sep = ""), pattern = "*proj.tif", full.names = TRUE)
+        tif_files <- list.files(paste0(processed_mcd_dir, quadrant_folder, "\\", year, "\\", sep = ""), pattern = "*proj.tif", full.names = TRUE)
         # creating a new empty dataset for each year
         combined_data_peryear <- data.frame()
 
