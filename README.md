@@ -41,9 +41,13 @@ and uses the output of other dedicated repositories:
 ├── data
 │   ├── derived
 │   │   └── satellite
-|   |       └── quadrant_1
+│   │       └── quadrant_1
+│   │           ├── 2001
+│   │           └── 2002
+│   ├── metadata
 │   └── raw
 │       ├── satellite
+│       │   └── quadrant_1
 │       └── shapefiles
 
 ```
