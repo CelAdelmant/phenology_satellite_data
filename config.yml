@@ -14,7 +14,9 @@ default:
   path:
     root: !expr rprojroot::find_rstudio_root_file()
     data: !expr file.path(rprojroot::find_rstudio_root_file(), "data")
+    raw_data: !expr file.path(rprojroot::find_rstudio_root_file(), "data", "raw")
     derived_data: !expr file.path(rprojroot::find_rstudio_root_file(), "data", "derived")
+    metadata: !expr file.path(rprojroot::find_rstudio_root_file(), "data", "metadata")
     figures: !expr file.path(rprojroot::find_rstudio_root_file(), "reports", "figures")
     reports: !expr file.path(rprojroot::find_rstudio_root_file(), "reports", "reports")
     resources: !expr file.path(rprojroot::find_rstudio_root_file(), "resources")
