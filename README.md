@@ -41,6 +41,7 @@ and uses the output of other dedicated repositories:
 ├── data
 │   ├── derived
 │   │   └── satellite
+|   |       └── quadrant_1
 │   └── raw
 │       ├── satellite
 │       └── shapefiles
@@ -76,18 +77,10 @@ renv::restore()
 ```
 Depending on your system, this may take a while, and you will likely be prompted (as in installation will just fail) to install some system dependencies.
 
-## Running the analyses
 
-### Models
-Running the script that prepares the derived datasets is not necessary: you already downloaded the derived data from [OSF]()
+## TODO
 
-If you do want to do this to make sure things work correctly, just `cd` into the `./scripts` folder and run `bash pipeline.sh` in the terminal. 
-
-Similarly, the model fits are already in the data, so they will not refit automatically. If you want to refit them, change `file_refit = "never"` to `file_refit = "always"` in the relevant function calls.
-
-### Figures and model output
-
-Any scripts outside of the `./scripts/setup` and  `./scripts/models/fit` folders can be run independently. Where there is an order constraint, this is indicated in the script name.
+  - [ ] Rename quadrant folders to remove capital letters and whitespaces
 
 
 ## Bugs and Issues
