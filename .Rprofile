@@ -73,3 +73,6 @@ if (interactive() && Sys.getenv("TERM_PROGRAM") == "vscode") {
 # find the repo root
 repo_root <- fs::path_real(fs::path(rprojroot::find_rstudio_root_file()))
 options(box.path = file.path(repo_root))
+
+# progress bars
+options(progressr.enable = TRUE)
