@@ -195,7 +195,7 @@ progressr::with_progress({
 
 # The output is 10 .tif files per hdf file, each depicting a single layer of the multilayer raster hdf files
 # These are all saved in their respective folders (mcd Quadrant --> year --> //)
-# I then use these subdatasets for the analysis below
+# I then use these layers for the analysis below
 
 
 
@@ -208,15 +208,20 @@ progressr::with_progress({
 
 # Defining directories of output
 # mcd directories
-processed_mcd_dir <- "C:\\Users\\newc6032\\OneDrive - Nexus365\\Documents\\ArcGIS\\Projects\\Tree_Phenology\\Processed Satellite Images test\\" # thi is where the processed raster subdatasets are stored
-setwd("C:\\Users\\newc6032\\OneDrive - Nexus365\\Documents\\ArcGIS\\Projects\\Tree_Phenology\\Processed Satellite images test") # here I set te working directory
-# shapefile directories
-shapefiles_dir <- "C:\\Users\\newc6032\\OneDrive - Nexus365\\Documents\\ArcGIS\\Projects\\Tree_Phenology\\Shapefiles extracted test" # this is where the shapefiles for each forest are stored
-shapefiles <- list.files(shapefiles_dir, pattern = "*.kml", full.names = TRUE) # listing all of these shapefiles as inputs for the for loop
-site_quadrant <- read.csv("C:\\Users\\newc6032\\OneDrive - Nexus365\\site_name_quadrant.csv") # downloading a csv file which contains all forest site codes and the satellite quadrant they fall into. This is because the satellite product is split into different areas of the globe.
 
-# redefining the projection (as above)
-wgs1984 <- "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"
+
+# shapefile directories
+
+shapefiles_dir <- file.path(config$path$raw_data, "shapefiles")
+shapefiles <- list.files(shapefiles_dir, pattern = "*.kml", full.names = TRUE)
+
+
+# Read .csv file which contains all forest site codes and the satellite
+# quadrant they fall into.
+site_quadrant <- read.csv(file.path(
+    config$path$metadata,
+    "site_name_quadrant.csv"
+))
 
 # defining list of years
 years <- as.character(seq(2001, 2021))
@@ -235,14 +240,14 @@ for (shapefile in shapefiles) {
     shapefile_name <- tools::file_path_sans_ext(basename(shapefile))
     # Looking which quadrant it falls into
     site_name <- substr(shapefile_name, 1, 3)
-    site_quadrant_row <- site_quadrant %>% filter(site_code == site_name)
+    site_quadrant_row <- site_quadrant |> dplyr::filter(site_code == site_name)
     quadrant_number <- site_quadrant_row$quadrant
-    quadrant_folder <- paste0("Quadrant ", quadrant_number, sep = "")
+    quadrant_folder <- paste0("quadrant_", quadrant_number)
 
 
     for (year in years) {
         # listing tif files within the quadrant folder of interest
-        tif_files <- list.files(paste0(processed_mcd_dir, quadrant_folder, "\\", year, "\\", sep = ""), pattern = "*proj.tif", full.names = TRUE)
+        tif_files <- list.files(file.path(output_dir, quadrant_folder, year), pattern = "*proj.tif", full.names = TRUE)
         # creating a new empty dataset for each year
         combined_data_peryear <- data.frame()
 
@@ -253,26 +258,40 @@ for (shapefile in shapefiles) {
             variable <- gsub(".*_(.*?)_proj.*", "\\1", file_name)
 
             # Reading the raster file
-            raster_data <- raster::raster(tif_file)
-            # Reading in shapefile and cleaning
-            shapefile <- st_read(shapefile)
-            shapefile <- st_zm(shapefile, drop = TRUE) # removing the z dimension
-            shapefile <- as_Spatial(shapefile) # making this a spatial object
+            raster_data <- terra::rast(tif_file, datum)
 
-            # Cropping the raster with the shapefile
-            raster_cropped <- crop(raster_data, extent(shapefile))
-            raster_polygons <- rasterToPolygons(raster_cropped, dissolve = TRUE)
+            # Reading in kml and converting to shapefile
+            contour <- sf::st_read(shapefile)
+            contour <- sf::st_zm(contour, drop = TRUE) # removing the z dimension
+            contour <- terra::vect(contour) # making this a spatial object
+
+            # REVIEW: had to reproject the contour to match the raster?
+            contour <- terra::project(contour, terra::crs(raster_data))
+
+            # draw the contour over the raster_data
+            # crop raster data to the bounding box of the contour + 20 km
+            # (to make sure the contour is fully covered)
+
+            # Cropping and masking the raster with the contour
+            raster_cropped <- terra::crop(raster_data, contour, mask = TRUE)
+            raster_polygons <- terra::as.polygons(raster_cropped)
+            terra::plot(raster_cropped)
+            terra::plot(raster_polygons)
+
+
             raster_polygons$cell_number <- seq_len(nrow(raster_polygons)) # assigning cell number
+
 
             # Making spatial data frame
             raster_polygons <- SpatialPolygonsDataFrame(raster_polygons, data.frame(raster_polygons), match.ID = TRUE)
 
-            # Ensuring same projection (not necessary but just in case!)
-            projection(shapefile) <- wgs1984
-            projection(raster_polygons) <- wgs1984
+
+            # REVIEW: NMR - Not sure what this does
 
             # Calculating intersect and adding to new dataset
-            intersect <- raster::intersect(shapefile, raster_polygons) # calculating intersect
+            intersect <- sf::st_intersection(raster_polygons, contour) # calculating intersect
+
+
             intersect_data <- intersect@data # making a new dataset of only intersected polygons
             intersected_rows <- intersect$cell_number # finding intersected rows
             area_overall <- area(raster_polygons) # assigning area to matrix
@@ -298,16 +317,16 @@ for (shapefile in shapefiles) {
             description_data <- intersect_data[, c("Name", "Description", "cell_number", "area_overall", "area_overlap", "proportion_wood", "year")]
             combined_data_peryear_full <- merge(combined_data_peryear, description_data, by = "cell_number", all = TRUE)
 
-            # This creates a dataset with all information about the pixels which intersect with theshapefile.
+            # This creates a dataset with all information about the pixels which intersect with the contour.
             # This is raw data and therefore must be cleaned and re-formatted below
         }
         # Doing some manipulations to transform "day since 1970" to "day of year"
-        combined_data_peryear_full <- combined_data_peryear_full %>%
+        combined_data_peryear_full <- combined_data_peryear_full |>
             mutate(days_between = as.numeric(difftime(
                 as.Date(paste0(year, "-01-01"), format = "%Y-%m-%d"),
                 as.Date("1970-01-01"),
                 units = "days"
-            ))) %>%
+            ))) |>
             mutate(
                 Greenup_doy = Greenup - days_between,
                 MidGreenup_doy = MidGreenup - days_between,
@@ -319,7 +338,7 @@ for (shapefile in shapefiles) {
             )
 
         # Removing unwated columns
-        combined_data_peryear_full <- combined_data_peryear_full %>%
+        combined_data_peryear_full <- combined_data_peryear_full |>
             select(
                 -Dormancy, -MidGreenup, -Greenup, -MidGreendown, -Peak,
                 -Senescence, -Maturity, -Description, -area_overall,
@@ -331,8 +350,8 @@ for (shapefile in shapefiles) {
 
         # Calculating the average value for the whole woodland by weighting the pixel by the proportion of its area covered in woodland and calculating an average
         combined_data_peryear_full <- na.omit(combined_data_peryear_full) # removing rows with NA values
-        combined_data_peryear_wa <- combined_data_peryear_full %>%
-            group_by(year) %>% # calculating weighted average
+        combined_data_peryear_wa <- combined_data_peryear_full |>
+            group_by(year) |> # calculating weighted average
             summarise(
                 Greenup_wa = sum(Greenup_doy * proportion_wood) / sum(proportion_wood),
                 MidGreenup_wa = sum(MidGreenup_doy * proportion_wood) / sum(proportion_wood),
@@ -352,8 +371,8 @@ for (shapefile in shapefiles) {
     # (this code would merge raw data but this is not required) all_years_per_shape <- do.call(rbind, all_years_data_list)
     all_years_per_shape_wa <- do.call(rbind, all_years_data_list_wa)
     # Saving dataset to excel file
-    file_path_wa <- paste0("C:\\Users\\newc6032\\OneDrive - Nexus365\\Documents\\ArcGIS\\Projects\\Tree_Phenology\\Processed Satellite images\\Outputs\\WeightedAverage\\", shapefile, "processed_data_wa.csv")
-    write.csv(all_years_per_shape_wa, file.path(file_path))
+    file_path_wa <- file.path(config$path$derived_data, shapefile, "processed_data_wa.csv")
+    write.csv(all_years_per_shape_wa, file.path(file_path_wa))
 
     # Saving dataset to list in r
     all_years_per_shape_list[[shapefile]] <- all_years_per_shape
