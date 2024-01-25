@@ -25,21 +25,21 @@ config <- config::get()
 
 # ──── GENERAL SETTINGS ───────────────────────────────────────────────────────
 
-# Defining subdatasets to extract
-subdatasets <- c(
+# Defining layers to extract
+layer_names <- c(
     "Greenup", "MidGreenup", "Peak", "Maturity",
     "Senescence", "MidGreendown", "Dormancy", "EVI_Minimum",
     "EVI_Amplitude", "EVI_Area"
 )
 
-# get oly half of the subdatasets for testing #REVIEW
-subdatasets <- c(
+# get oly half of the layers for testing #REVIEW
+layer_names <- c(
     "Greenup", "MidGreenup", "Peak", "Maturity", "Senescence",
     "MidGreendown"
 )
 
 # Defining projection
-wgs1984 <- "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"
+datum <- "epsg:4326"
 
 
 # ──── PARALLEL SETUP ─────────────────────────────────────────────────────────
@@ -47,24 +47,20 @@ wgs1984 <- "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"
 ncores <- future::availableCores()
 message("Number of cores available: ", ncores)
 future::plan("multisession", workers = ncores)
+progressr::handlers("cli")
 
-progressr::handlers(progressr::handler_pbcol(
-    adjust = 1.0,
-    complete = function(s) cli::bg_red(cli::col_black(s)),
-    incomplete = function(s) cli::bg_cyan(cli::col_black(s))
-))
 
 # ──── FUNCTION DEFINITIONS ───────────────────────────────────────────────────
 
 
-# Function to extract subdatasets of interest from HDF files
-extract_subdatasets <- function(hdf_file, subdatasets) {
+# Function to extract layers of interest from HDF files
+extract_layers <- function(quadrant_name, hdf_file, layer_names) {
     file_name <- gsub("\\..*$", "", basename(hdf_file))
     year <- substr(file_name, 5, 8)
 
     gdalinfo_output <- gdalUtilities::gdalinfo(hdf_file, quiet = TRUE)
 
-    subdataset_lines <- sub(
+    layer_lines <- sub(
         "^\\s*SUBDATASET_\\d+_NAME=", "",
         grep("^\\s*SUBDATASET_\\d+_NAME",
             strsplit(gdalinfo_output, "\n")[[1]],
@@ -72,56 +68,64 @@ extract_subdatasets <- function(hdf_file, subdatasets) {
         )
     )
 
-    subdataset_lines <- subdataset_lines[grep(paste0(
-        paste0(subdatasets, collapse = "|"), "$"
-    ), subdataset_lines)]
+    layer_lines <- layer_lines[grep(paste0(
+        paste0(layer_names, collapse = "|"), "$"
+    ), layer_lines)]
 
-    return(list(
-        file_name = file_name, year = year,
-        subdataset_lines = subdataset_lines
-    ))
+
+    layers <- data.frame(
+        file_name = file_name,
+        data = layer_lines,
+        quadrant_name = quadrant_name,
+        year = year,
+        name = sapply(
+            strsplit(layer_lines, ":"),
+            function(x) x[length(x)]
+        ),
+        layer = sapply(
+            strsplit(layer_lines, ":"),
+            function(x) x[length(x)]
+        ),
+        message = paste0(
+            sapply(
+                strsplit(layer_lines, ":"),
+                function(x) x[length(x)]
+            ), "(", year, ")",
+            "in ", quadrant_name
+        )
+    )
+    return(layers)
 }
 
 
-# Function to extract and save the subdataset as a projected GeoTIFF.
-save_subdataset <- function(row_d, wgs1984) {
+# Function to extract and save the layer as a projected GeoTIFF.
+save_layer <- function(row_d, datum, output_dir) {
     sub <- row_d$name
     quadrant_name <- row_d$quadrant_name
     year <- row_d$year
     file_name <- gsub("\\..*$", "", row_d$file_name)
 
-    gdal_subdataset <- row_d$data
+    gdal_layer <- row_d$data
 
-    out_dir <- file.path(
-        config$path$derived_data, "satellite", quadrant_name,
+    output_dir <- file.path(
+        output_dir, quadrant_name,
         year
     )
-    if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+    if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
     dst_name <- paste0(file_name, "_", sub, ".tif")
-    out_file <- file.path(out_dir, dst_name)
-    gdalUtilities::gdal_translate(gdal_subdataset, dst_dataset = out_file)
-    raster_data <- terra::rast(out_file, wgs1984)
+    out_file <- file.path(output_dir, dst_name)
+    gdalUtilities::gdal_translate(gdal_layer, dst_dataset = out_file)
+    raster_data <- terra::rast(out_file, datum)
 
     out_name <- paste0(file_name, "_", sub, "_proj.tif")
     terra::writeRaster(raster_data,
-        filename = file.path(out_dir, out_name),
+        filename = file.path(output_dir, out_name),
         overwrite = TRUE
     )
 
     file.remove(out_file)
     file.remove(paste0(out_file, ".aux.xml"))
-}
-
-
-
-hdf_progress_msg <- function(hdf_file, layers) {
-    message <- paste(
-        "Processing", basename(hdf_file), "in",
-        basename(dirname(hdf_file)),
-        ":", length(layers$data), "subdatasets"
-    )
-    return(message)
 }
 
 
@@ -151,8 +155,8 @@ mcd_quadrants <- list.dirs(
 
 # Main processing step
 
-# Loop through each MCD quadrant
-# Create a df of all subdatasets for each quadrant, HDF file, year and layer
+# Loop through each MCD quadrant, creating a df of all layers for each quadrant,
+# HDF file, year and layer
 
 dfs <- list()
 
@@ -161,45 +165,31 @@ for (mcd_quadrant in mcd_quadrants) {
     quadrant_name <- basename(mcd_quadrant)
 
     for (hdf_file in hdf_files) {
-        subdataset <- extract_subdatasets(hdf_file, subdatasets)
-        layer <- data.frame(
-            file_name = basename(hdf_file),
-            data = subdataset$subdataset_lines,
-            message = message,
-            quadrant_name = quadrant_name,
-            year = subdataset$year,
-            layer = sapply(
-                strsplit(subdataset$subdataset_lines, ":"),
-                function(x) x[length(x)]
-            )
-        )
+        layer <- extract_layers(quadrant_name, hdf_file, layer_names)
         dfs[[length(dfs) + 1]] <- layer
     }
 }
 
 layers <- dplyr::as_tibble(do.call(rbind, dfs))
-layers$name <- sapply(strsplit(layers$data, ":"), function(x) x[length(x)])
-layers$index <- seq_len(nrow(layers))
-layers$message <- paste(
-    "Processing", layers$name, "(", layers$year, ")",
-    "in", layers$quadrant_name
-)
 
 
-# Now we have a dataframe with all the subdatasets for each HDF file,
-# we can extract the subdatasets and save them as projected GeoTIFFs.
+
+# Now we have a dataframe with all the layers for each HDF file,
+# we can extract the layers and save them as projected GeoTIFFs.
+
+# Define output directory
+output_dir <- file.path(config$path$derived_data, "satellite")
 
 progressr::with_progress({
     p <- progressr::progressor(
         steps = nrow(layers), enable = TRUE, trace = FALSE
     )
-    furrr::future_map(layers$index, function(i) {
+    furrr::future_map(seq_len(nrow(layers)), function(i) {
         row_cont <- layers[i, ]
         p(message = row_cont$message)
-        save_subdataset(row_cont, wgs1984)
+        save_layer(row_cont, datum, output_dir = output_dir)
     }, .options = furrr::furrr_options(seed = TRUE))
 })
-
 
 
 
