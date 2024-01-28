@@ -1,6 +1,8 @@
 # ──── LIBRARIES AND IMPORTS ──────────────────────────────────────────────────
 
 config <- config::get()
+message("Number of cores available: ", config$ncores)
+source("R/utils.R")
 sf::sf_use_s2(FALSE) # to avoid issues with self-intersections
 
 # ──── FUNCTION DEFINITIONS ───────────────────────────────────────────────────
@@ -40,11 +42,11 @@ generate_png <- function(raster_cropped, contour, site_name,
 }
 
 
-process_shapefile <- function(shapefile) {
+get_site_contour <- function(site_shapefile) {
     # Extracting name of shapefile
-    name <- tools::file_path_sans_ext(basename(shapefile))
+    name <- tools::file_path_sans_ext(basename(site_shapefile))
     # Reading in kml and converting to shapefile
-    contour <- shapefile |>
+    contour <- site_shapefile |>
         sf::st_read(quiet = TRUE) |>
         sf::st_zm(drop = TRUE) |>
         dplyr::summarise(geometry = sf::st_combine(geometry)) |> # nolint
@@ -54,6 +56,13 @@ process_shapefile <- function(shapefile) {
     return(list(name = name, contour = contour))
 }
 
+get_tif_files <- function(output_dir, quad_info, year) {
+    year_dir <- file.path(output_dir, quad_info$folder, year)
+    tif_files <- list.files(year_dir,
+        pattern = "*proj.tif", full.names = TRUE
+    )
+    return(tif_files)
+}
 
 get_site_info <- function(sh_data, site_quadrant, output_dir) {
     # Looking which quadrant it falls into
@@ -125,7 +134,7 @@ output_dir <- file.path(config$path$derived_data, "satellite")
 
 # shapefile directories
 shapefiles_dir <- file.path(config$path$raw_data, "shapefiles")
-shapefiles <- list.files(shapefiles_dir, pattern = "*.kml", full.names = TRUE)
+site_shapefiles <- list.files(shapefiles_dir, pattern = "*.kml", full.names = TRUE)
 
 
 # Read .csv file which contains all forest site codes and the satellite
@@ -198,60 +207,60 @@ site_quadrant <- read.csv(file.path(
 
 
 
-# defining list of years
+
 years <- as.character(seq(2001, 2021))
 
+progressr::with_progress({
+    p <- progressr::progressor(
+        steps = length(site_shapefiles), enable = TRUE, trace = FALSE
+    )
+    system.time({
+        result <- furrr::future_map(site_shapefiles, function(site) {
+            data <- list()
+            suppressMessages(sf::sf_use_s2(FALSE))
+            sh_data <- get_site_contour(site)
+            quad_info <- get_site_info(sh_data, site_quadrant, output_dir)
+            if (all(!file.exists(file.path(output_dir, quad_info$folder, years)))) {
+                message(paste0("No data found for ", gsub("_", " ", quad_info$folder)))
+                return(NULL)
+            }
 
-data <- list()
+            for (year in years) {
+                tif_files <- get_tif_files(output_dir, quad_info, year)
+                if (length(tif_files) == 0) {
+                    message("No tif files found for ", year, " in ", quad_info$folder)
+                    next
+                }
 
-for (shapefile in shapefiles) {
-    sh_data <- process_shapefile(shapefile)
-    quad_info <- get_site_info(sh_data, site_quadrant, output_dir)
+                for (tif_file in tif_files) {
+                    values <- process_raster(tif_file, sh_data$contour, quad_info, year)
+                    data[[paste(quad_info$site, year, values$variable[1], sep = "_")]] <- values
+                }
+            }
+            return(data)
+        }, .options = furrr::furrr_options(seed = TRUE))
+    }) -> time
+    # Pretty print time elapsed
+    print_time_elapsed(time)
+})
 
-    if (all(!file.exists(file.path(output_dir, quad_info$folder, years)))) {
-        message(paste0("No data found for ", gsub("_", " ", quad_info$folder)))
-        next
-    }
+# combine all the dataframes in the 'result' list
 
-    for (year in years) {
-        # listing tif files within the quadrant folder of interest
-        year_dir <- file.path(output_dir, quad_info$folder, year)
-        tif_files <- list.files(year_dir,
-            pattern = "*proj.tif", full.names = TRUE
-        )
-        # check if there are any tif files, otherwise skip to next year
-        if (length(tif_files) == 0) {
-            message("No tif files found for ", year, " in ", quad_info$folder)
-            next
-        }
 
-        for (tif_file in tif_files) {
-            values <- process_raster(tif_file, sh_data$contour, quad_info, year)
+df <- dplyr::bind_rows(purrr::list_flatten(result), .id = NULL) |>
+    dplyr::as_tibble()
 
-            # append this to the quadrant dataframe
-            data[[paste(quad_info$site, year, values$variable[1], sep = "_")]] <- values
-        }
-    }
-}
 
-all_data <- do.call(rbind, data) |> dplyr::as_tibble()
+dayvars <- c("Greenup", "MidGreenup", "MidGreendown", "Dormancy", "Maturity", "Peak", "Senescence")
 
 
 
+# select where 'value' is in dayvars, then convert the value in the 'value'
+# column from number of days since 1970-01-01 to number of days since the start of the year (using the year column).
+# the final df needs to have all rows, not just the filtered ones
 
-#         values <- values |>
-#             dplyr::mutate(
-#                 days_between = as.numeric(difftime(as.Date(paste0(year, "-01-01")),
-#                     as.Date("1970-01-01"),
-#                     units = "days"
-#                 )),
-#                 dplyr::across(dplyr::starts_with(layer_names),
-#                     ~ . - days_between,
-#                     .names = "doy"
-#                 )
-#             )
-#         # remove 'days_between' and variable columns using base R
-#         values[, !(names(values) %in% c("days_between", variable))]
+# TODO
+
 
 
 
