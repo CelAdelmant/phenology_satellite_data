@@ -40,6 +40,76 @@ generate_png <- function(raster_cropped, contour, site_name,
 }
 
 
+process_shapefile <- function(shapefile) {
+    # Extracting name of shapefile
+    name <- tools::file_path_sans_ext(basename(shapefile))
+    # Reading in kml and converting to shapefile
+    contour <- shapefile |>
+        sf::st_read(quiet = TRUE) |>
+        sf::st_zm(drop = TRUE) |>
+        dplyr::summarise(geometry = sf::st_combine(geometry)) |> # nolint
+        sf::st_cast("POLYGON") |>
+        sf::st_make_valid() |>
+        terra::vect()
+    return(list(name = name, contour = contour))
+}
+
+
+get_site_info <- function(sh_data, site_quadrant, output_dir) {
+    # Looking which quadrant it falls into
+    site_name <- substr(sh_data$name, 1, 3)
+    quadrant_number <- site_quadrant |>
+        dplyr::filter(site_code == site_name) |>
+        dplyr::select(quadrant)
+    quadrant_folder <- paste0("quadrant_", quadrant_number)
+
+
+    return(list(number = quadrant_number, folder = quadrant_folder, site = site_name))
+}
+
+
+process_raster <- function(tif_file, contour, quad_info, year,
+                           save_png = TRUE) {
+    file_name <- tools::file_path_sans_ext(basename(tif_file))
+    variable <- gsub(".*_(.*?)_proj.*", "\\1", file_name)
+
+    raster_data <- terra::rast(tif_file, config$datum)
+
+    # REVIEW: remove duplicate variables
+    raster_data <- raster_data[[1]]
+
+    # REVIEW: had to reproject the contour to match the raster?
+    contour <- terra::project(contour, terra::crs(raster_data))
+
+    raster_cropped <- terra::crop(raster_data, contour,
+        mask = TRUE,
+        touches = TRUE, ext = TRUE, snap = "out"
+    )
+    cell_size_km <- terra::cellSize(raster_cropped, unit = "km")
+    raster_combined <- c(raster_cropped, cell_size_km)
+    values <- terra::extract(raster_combined, contour, exact = TRUE)
+
+    values <- values |>
+        dplyr::mutate(
+            cell_number = seq_len(nrow(values)),
+            year = year,
+            variable = variable,
+            site = quad_info$site,
+            quadrant = quad_info$number
+        ) |>
+        dplyr::rename_with(.cols = 2, ~"value")
+
+    # Save a png of the cropped raster for reference
+    if (save_png) {
+        generate_png(
+            raster_cropped, contour, quad_info$site, variable, year,
+            quad_info$folder, file.path(output_dir, "png")
+        )
+    }
+
+    return(values)
+}
+
 # ──── MAIN ───────────────────────────────────────────────────────────────────
 
 # Here I extract data from the rasters created above for specific areas of forest.
@@ -135,89 +205,31 @@ years <- as.character(seq(2001, 2021))
 data <- list()
 
 for (shapefile in shapefiles) {
-    # Extracting name of shapefile
-    shapefile_name <- tools::file_path_sans_ext(basename(shapefile))
+    sh_data <- process_shapefile(shapefile)
+    quad_info <- get_site_info(sh_data, site_quadrant, output_dir)
 
-    # Reading in kml and converting to shapefile
-    contour <- shapefile |>
-        sf::st_read(quiet = TRUE) |>
-        sf::st_zm(drop = TRUE) |>
-        dplyr::summarise(geometry = sf::st_combine(geometry)) |>
-        sf::st_cast("POLYGON") |>
-        sf::st_make_valid() |>
-        terra::vect()
-
-    # Looking which quadrant it falls into
-    site_name <- substr(shapefile_name, 1, 3)
-    site_quadrant_row <- site_quadrant |> dplyr::filter(site_code == site_name)
-    quadrant_number <- site_quadrant_row$quadrant
-    quadrant_folder <- paste0("quadrant_", quadrant_number)
-
-    # check if there are any files in the quadrant folder,
-    # otherwise skip to next quadrant
-    if (length(list.files(file.path(output_dir, quadrant_folder))) == 0) {
-        message("No files found for ", quadrant_folder)
+    if (all(!file.exists(file.path(output_dir, quad_info$folder, years)))) {
+        message(paste0("No data found for ", gsub("_", " ", quad_info$folder)))
         next
     }
 
     for (year in years) {
         # listing tif files within the quadrant folder of interest
-        year_dir <- file.path(output_dir, quadrant_folder, year)
+        year_dir <- file.path(output_dir, quad_info$folder, year)
         tif_files <- list.files(year_dir,
             pattern = "*proj.tif", full.names = TRUE
         )
         # check if there are any tif files, otherwise skip to next year
         if (length(tif_files) == 0) {
-            message("No tif files found for ", year, " in ", quadrant_folder)
+            message("No tif files found for ", year, " in ", quad_info$folder)
             next
         }
-        # creating a new empty dataset for each year
-        combined_data_peryear <- data.frame()
 
         for (tif_file in tif_files) {
-            # Extracting the file name without extension
-            file_name <- tools::file_path_sans_ext(basename(tif_file))
-            # Extracting the variable (Greenup, MidGreenup, MidGreendown etc)
-            variable <- gsub(".*_(.*?)_proj.*", "\\1", file_name)
-
-            # Reading the raster file
-            raster_data <- terra::rast(tif_file, config$datum)
-
-            # REVIEW: remove duplicate variables
-            raster_data <- raster_data[[1]]
-
-            # REVIEW: had to reproject the contour to match the raster?
-            contour <- terra::project(contour, terra::crs(raster_data))
-
-            # Cropping and masking the raster with the contour,
-            # calculating the cell area and the proportion of the cell
-            # covered by the woodland contour
-            raster_cropped <- terra::crop(raster_data, contour,
-                mask = TRUE,
-                touches = TRUE, ext = TRUE, snap = "out"
-            )
-            cell_size_km <- terra::cellSize(raster_cropped, unit = "km")
-            raster_combined <- c(raster_cropped, cell_size_km)
-            values <- terra::extract(raster_combined, contour, exact = TRUE)
-
-            values <- values |>
-                dplyr::mutate(
-                    cell_number = seq_len(nrow(values)),
-                    year = year,
-                    variable = variable,
-                    site = site_name,
-                    quadrant = quadrant_number
-                ) |>
-                dplyr::rename_with(.cols = 2, ~"value")
+            values <- process_raster(tif_file, sh_data$contour, quad_info, year)
 
             # append this to the quadrant dataframe
-            data[[paste(site_name, year, variable, sep = "_")]] <- values
-
-            # Save a png of the cropped raster for reference
-            generate_png(
-                raster_cropped, contour, site_name, variable, year,
-                quadrant_folder, file.path(output_dir, "png")
-            )
+            data[[paste(quad_info$site, year, values$variable[1], sep = "_")]] <- values
         }
     }
 }
