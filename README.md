@@ -85,7 +85,24 @@ Depending on your system, this may take a while, and you will likely be prompted
 ## TODO
 
   - [ ] Rename quadrant folders to remove capital letters and whitespaces
+  - [ ] Make explicit the variable name equivalences:
 
+```r
+
+variable_equivalences <- c(
+    "Dormancy" = "Onset_Dormancy",
+    "Amplitude" = "EVI_Amplitude",
+    "Area" = "EVI_Area",
+    "Minimum" = "Minimum_EVI",
+    "Greenup" = "Onset_Greenness_Increase",
+    "Maturity" = "Onset_Maturity",
+    "MidGreendown" = "Middle_Greenness_Decrease",
+    "MidGreenup" = "Middle_Greenness_Increase",
+    "Peak" = "Date_of_Peak",
+    "Senescence" = "Onset_Greenness_Decrease"
+)
+
+```
 
 ## Bugs and Issues
 
