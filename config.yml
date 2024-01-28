@@ -21,3 +21,14 @@ default:
     reports: !expr file.path(rprojroot::find_rstudio_root_file(), "reports", "reports")
     resources: !expr file.path(rprojroot::find_rstudio_root_file(), "resources")
     source: !expr file.path(rprojroot::find_rstudio_root_file(), "R")
+
+  # Defining layers to extract
+  layer_names: !expr c(
+      "Greenup", "MidGreenup", "Peak", "Maturity",
+      "Senescence", "MidGreendown", "Dormancy", "EVI_Minimum",
+      "EVI_Amplitude", "EVI_Area")
+
+  datum: "epsg:4326"
+    
+
+
