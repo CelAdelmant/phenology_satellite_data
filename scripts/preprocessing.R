@@ -10,16 +10,8 @@
 # ──── LIBRARIES AND IMPORTS ──────────────────────────────────────────────────
 
 config <- config::get()
-
-# ──── GENERAL SETTINGS ───────────────────────────────────────────────────────
-
-
-# ──── PARALLEL SETUP ─────────────────────────────────────────────────────────
-
-ncores <- future::availableCores()
-message("Number of cores available: ", ncores)
-future::plan("multisession", workers = ncores)
-progressr::handlers("cli")
+message("Number of cores available: ", config$ncores)
+source("R/utils.R")
 
 
 # ──── FUNCTION DEFINITIONS ───────────────────────────────────────────────────
@@ -118,13 +110,6 @@ get_hdf_files <- function(mcd_quadrant) {
     return(hdf_files)
 }
 
-print_time_elapsed <- function(result) {
-    time_elapsed <- result[3]
-    minutes <- floor(time_elapsed / 60)
-    seconds <- round(time_elapsed %% 60, 2)
-    ifelse(minutes == 1, minute_text <- "minute", minute_text <- "minutes")
-    message("Finished in ", minutes, " ", minute_text, " and ", seconds, " seconds")
-}
 
 
 # ──── PREPROCESS HDF FILES ───────────────────────────────────────────────────
