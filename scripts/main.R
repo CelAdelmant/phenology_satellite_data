@@ -55,13 +55,17 @@ generate_png <- function(raster_cropped, contour, site_name,
 #' @export
 get_site_contour <- function(site_shapefile) {
     name <- tools::file_path_sans_ext(basename(site_shapefile))
-    contour <- site_shapefile |>
-        sf::st_read(quiet = TRUE) |>
-        sf::st_zm(drop = TRUE) |>
-        dplyr::summarise(geometry = sf::st_combine(geometry)) |>
-        sf::st_cast("POLYGON") |>
-        sf::st_make_valid() |>
-        terra::vect()
+    tryCatch({
+        contour <- site_shapefile |>
+            sf::st_read(quiet = TRUE) |>
+            sf::st_zm(drop = TRUE) |>
+            dplyr::summarise(geometry = sf::st_combine(geometry)) |>
+            sf::st_cast("POLYGON") |>
+            sf::st_make_valid() |>
+            terra::vect()
+    }, error = function(e) {
+        stop("Failed to get contour for ", name, ": ", e$message)
+    })
     return(list(name = name, contour = contour))
 }
 
@@ -124,10 +128,15 @@ process_raster <- function(tif_file, contour, quad_info, year,
     raster_data <- terra::rast(tif_file, config$datum)
     raster_data <- raster_data[[1]]
     contour <- terra::project(contour, terra::crs(raster_data))
-    raster_cropped <- terra::crop(raster_data, contour,
-        mask = TRUE,
-        touches = TRUE, ext = TRUE, snap = "out"
-    )
+    tryCatch({
+        raster_cropped <- terra::crop(raster_data, contour,
+            mask = TRUE,
+            touches = TRUE, ext = TRUE, snap = "out"
+        )
+    }, error = function(e) {
+        stop("Failed to crop raster for ",
+        quad_info$site, " quadrant ", quad_info$number, ": ", e$message)
+    })
     cell_size_km <- terra::cellSize(raster_cropped, unit = "km")
     raster_combined <- c(raster_cropped, cell_size_km)
     values <- terra::extract(raster_combined, contour, exact = TRUE)
@@ -256,11 +265,13 @@ progressr::with_progress({
             suppressMessages(sf::sf_use_s2(FALSE))
             sh_data <- get_site_contour(site)
             quad_info <- get_site_info(sh_data, site_quadrant, output_dir)
+
             if (all(!file.exists(
                 file.path(output_dir, quad_info$folder, years)
             ))) {
                 message(
-                    paste0("No data for ", gsub("_", " ", quad_info$folder))
+                    paste0("No data for ", gsub("_", " ", quad_info$folder),
+                    "in ", quad_info$site_name )
                 )
                 return(NULL)
             }
