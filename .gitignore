@@ -199,3 +199,4 @@ flycheck_*.el
 *.hdf
 *.tif
 *.kml
+data/derived/*
