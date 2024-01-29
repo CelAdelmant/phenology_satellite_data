@@ -10,7 +10,8 @@ sf::sf_use_s2(FALSE) # to avoid issues with self-intersections
 
 #' Generate PNG image of cropped raster
 #'
-#' This function generates a PNG image of a cropped raster for a specific site, variable, and year.
+#' This function generates a PNG image of a cropped raster for a specific site,
+#' variable, and year.
 #'
 #' @param raster_cropped The cropped raster object.
 #' @param contour The contour object used for cropping.
@@ -23,7 +24,10 @@ sf::sf_use_s2(FALSE) # to avoid issues with self-intersections
 #' @return None
 #'
 #' @examples
-#' generate_png(raster_cropped, contour, "Site A", "Temperature", 2022, "Quadrant 1", "/path/to/output")
+#' generate_png(
+#'     raster_cropped, contour, "Site A", "Temperature", 2022,
+#'     "Quadrant 1", "/path/to/output"
+#' )
 generate_png <- function(raster_cropped, contour, site_name,
                          variable, year, quadrant_folder, output_dir) {
     # Save a png of the cropped raster for reference
@@ -41,21 +45,36 @@ generate_png <- function(raster_cropped, contour, site_name,
     dev.off()
 }
 
-
+#' Get site contour from shapefile
+#'
+#' This function reads a shapefile, extracts the name of the shapefile,
+#' converts it to a polygon shape, and returns the name and contour as a list.
+#'
+#' @param site_shapefile Path to the shapefile.
+#' @return A list containing the name and contour of the site.
+#' @export
 get_site_contour <- function(site_shapefile) {
-    # Extracting name of shapefile
     name <- tools::file_path_sans_ext(basename(site_shapefile))
-    # Reading in kml and converting to shapefile
     contour <- site_shapefile |>
         sf::st_read(quiet = TRUE) |>
         sf::st_zm(drop = TRUE) |>
-        dplyr::summarise(geometry = sf::st_combine(geometry)) |> # nolint
+        dplyr::summarise(geometry = sf::st_combine(geometry)) |>
         sf::st_cast("POLYGON") |>
         sf::st_make_valid() |>
         terra::vect()
     return(list(name = name, contour = contour))
 }
 
+#' Get TIF files from output directory
+#'
+#' This function retrieves a list of TIF files from the specified output directory
+#' for a given quadrant and year.
+#'
+#' @param output_dir Path to the output directory.
+#' @param quad_info Quadrant information.
+#' @param year Year for which TIF files are required.
+#' @return A character vector containing the paths to the TIF files.
+#' @export
 get_tif_files <- function(output_dir, quad_info, year) {
     year_dir <- file.path(output_dir, quad_info$folder, year)
     tif_files <- list.files(year_dir,
@@ -64,32 +83,47 @@ get_tif_files <- function(output_dir, quad_info, year) {
     return(tif_files)
 }
 
+#' Get site information
+#'
+#' This function retrieves the site information for a given shapefile data,
+#' site quadrant, and output directory.
+#'
+#' @param sh_data Shapefile data.
+#' @param site_quadrant Site quadrant data.
+#' @param output_dir Path to the output directory.
+#' @return A list containing the site number, folder, and name.
+#' @export
 get_site_info <- function(sh_data, site_quadrant, output_dir) {
-    # Looking which quadrant it falls into
     site_name <- substr(sh_data$name, 1, 3)
     quadrant_number <- site_quadrant |>
         dplyr::filter(site_code == site_name) |>
         dplyr::select(quadrant)
     quadrant_folder <- paste0("quadrant_", quadrant_number)
-
-
-    return(list(number = quadrant_number, folder = quadrant_folder, site = site_name))
+    return(list(
+        number = quadrant_number, folder = quadrant_folder,
+        site = site_name
+    ))
 }
 
-
+#' Process raster data
+#'
+#' This function processes a TIF file by cropping it based on a contour,
+#' extracting values, and saving a PNG file if required.
+#'
+#' @param tif_file Path to the TIF file.
+#' @param contour Contour shape.
+#' @param quad_info Quadrant information.
+#' @param year Year of the raster data.
+#' @param save_png Logical indicating whether to save a PNG file.
+#' @return A data frame containing the processed raster values.
+#' @export
 process_raster <- function(tif_file, contour, quad_info, year,
                            save_png = TRUE) {
     file_name <- tools::file_path_sans_ext(basename(tif_file))
     variable <- gsub(".*_(.*?)_proj.*", "\\1", file_name)
-
     raster_data <- terra::rast(tif_file, config$datum)
-
-    # REVIEW: remove duplicate variables
     raster_data <- raster_data[[1]]
-
-    # REVIEW: had to reproject the contour to match the raster?
     contour <- terra::project(contour, terra::crs(raster_data))
-
     raster_cropped <- terra::crop(raster_data, contour,
         mask = TRUE,
         touches = TRUE, ext = TRUE, snap = "out"
@@ -97,7 +131,6 @@ process_raster <- function(tif_file, contour, quad_info, year,
     cell_size_km <- terra::cellSize(raster_cropped, unit = "km")
     raster_combined <- c(raster_cropped, cell_size_km)
     values <- terra::extract(raster_combined, contour, exact = TRUE)
-
     values <- values |>
         dplyr::mutate(
             cell_number = seq_len(nrow(values)),
@@ -107,35 +140,100 @@ process_raster <- function(tif_file, contour, quad_info, year,
             quadrant = quad_info$number
         ) |>
         dplyr::rename_with(.cols = 2, ~"value")
-
-    # Save a png of the cropped raster for reference
     if (save_png) {
         generate_png(
             raster_cropped, contour, quad_info$site, variable, year,
             quad_info$folder, file.path(output_dir, "png")
         )
     }
-
     return(values)
 }
 
-# ──── MAIN ───────────────────────────────────────────────────────────────────
+#' Bind all dataframes together.
+#'
+#' This requires that all dataframes have the same columns.
+#'
+#' @param result A list of dataframes to be bound together
+#' @return A tibble with all the dataframes bound together
+bind_dataframes <- function(result) {
+    df <- dplyr::bind_rows(purrr::list_flatten(result), .id = NULL) |>
+        dplyr::as_tibble() |>
+        dplyr::mutate(quadrant = unlist(quadrant)) # nolint
+    return(df)
+}
 
-# Here I extract data from the rasters created above for specific areas of forest.
-# The output here is a dataset showing the average tree phenology variable values
-# for each woodland in my dataset.
+#' Change date columns to day of year instead of day since 1970.
+#'
+#' Date variables are: Greenup, MidGreenup, MidGreendown,
+#' Dormancy, Maturity, Peak, Senescence
+#'
+#' @param df A dataframe with date columns
+#' @return A dataframe with date columns converted to day of year
+format_date_columns <- function(df) {
+    dayvars <- c(
+        "Greenup", "MidGreenup", "MidGreendown",
+        "Dormancy", "Maturity", "Peak", "Senescence"
+    )
 
-# Defining directories of output
-# mcd directories
+    df <- df |>
+        dplyr::mutate(
+            value = ifelse(variable %in% dayvars,
+                as.numeric(value) - as.numeric(as.Date(paste0(year, "-01-01"))),
+                value
+            )
+        ) |>
+        # remove 'ID' column
+        dplyr::select(-c("ID"))
+    return(df)
+}
 
-# Define output directory
+#' Save the data to a csv file in the derived, 'output' directory
+#'
+#' @param df A dataframe to be saved
+#' @param file_path Path to the file where the dataframe should be saved
+save_data <- function(df, file_path) {
+    # create the directory if it doesn't exist
+    dir.create(dirname(file_path), recursive = TRUE, showWarnings = FALSE)
+    readr::write_csv(df, file_path)
+}
+
+#' Calculate weighted average and missing values
+#'
+#' This function calculates the weighted average of a variable and the
+#' proportion of missing values for each combination of site, year, and variable
+#' in a data frame.
+#'
+#' @param df A data frame containing the variables: value, area, fraction,
+#' cell_number, year, variable, site, quadrant
+#' @return A summarized data frame with the following columns: site, year,
+#' variable, value (weighted average), and missing (average proportion of
+#' missing values).
+#' @examples df_wa <- calculate_weighted_average(df)
+weighted_average <- function(df) {
+    df_wa <- df |>
+        dplyr::group_by(site, year, variable) |>
+        dplyr::mutate(missing = sum(is.na(value)) / dplyr::n()) |>
+        dplyr::summarise(
+            value = sum(value * fraction, na.rm = TRUE) /
+                sum(fraction, na.rm = TRUE),
+            missing = mean(missing),
+            .groups = "drop"
+        )
+    return(df_wa)
+}
+
+# ──── SETTINGS AND DATA INGEST ───────────────────────────────────────────────
+
+# Define output directory and years of interest
 output_dir <- file.path(config$path$derived_data, "satellite")
-
+years <- as.character(seq(2001, 2021))
 
 # shapefile directories
 shapefiles_dir <- file.path(config$path$raw_data, "shapefiles")
-site_shapefiles <- list.files(shapefiles_dir, pattern = "*.kml", full.names = TRUE)
-
+site_shapefiles <- list.files(shapefiles_dir,
+    pattern = "*.kml",
+    full.names = TRUE
+)
 
 # Read .csv file which contains all forest site codes and the satellite
 # quadrant they fall into.
@@ -144,155 +242,64 @@ site_quadrant <- read.csv(file.path(
     "site_name_quadrant.csv"
 ))
 
-# # read layers list
-# layers_file <- file.path(config$path$derived_data, "tmp", "layers.csv")
-# layers <- read.csv(layers_file) |> dplyr::as_tibble()
 
+# ──── MAIN ───────────────────────────────────────────────────────────────────
 
-# # add the paths to the derived projected tif files to the layers dataframe
-# layers <- layers |>
-#     dplyr::mutate(
-#         path = file.path(
-#             config$path$derived_data, "satellite",
-#             quadrant_name, year, paste0(file_name, "_", layer, "_proj.tif")
-#         )
-#     )
-
-# # add the site_code to the layers dataframe, matching the number after the _ in quadrant_name to 'quadrant' in site_quadrant and extracting the site_code
-
-# # make a new 'quadrant' column in the layers dataframe by extracting the number(s) after the _ in quadrant_name
-# layers <- layers |>
-#     dplyr::mutate(
-#         quadrant = as.integer(gsub(".*_(\\d+)$", "\\1", quadrant_name))
-#     )
-
-# # based on the quadrant number, get the site_code from the site_quadrant dataframe
-# layers <- layers |>
-#     dplyr::left_join(site_quadrant, by = "quadrant") |>
-#     dplyr::select(-quadrant)
-
-# # REVIEW: need to iterate over sites, because multiple sites share quadrants.
-# # maybe build a list of dataframes, one for all the years*layers for each site,
-# # and then combine them at the end? site always will poit to the same shapefile.
-
-
-
-# # now we have the site name, we can get the path to the shapefile, which is in the raw/shapefiles directory, with extension .kml, and starts with the site name
-# # 1. get the list of shapefiles
-# shapefiles
-
-# # 2,. for each file_name, get the path to the corresponding shapefile and add it to that row, based on the site name:
-# layers <- layers |>
-#     dplyr::mutate(
-#         shapefile = sapply(site, function(x) {
-#             shapefile <- shapefiles |> grep(paste0("^", x), value = TRUE)
-#             if (length(shapefile) == 0) {
-#                 stop("No shapefile found for ", x)
-#             }
-#             if (length(shapefile) > 1) {
-#                 stop("Multiple shapefiles found for ", x)
-#             }
-#             shapefile
-#         })
-#     )
-
-
-
-
-# # check that all the paths exist
-# if (any(!file.exists(layers$path))) {
-#     stop("Some files are missing")
-# }
-
-
-
-
-
-years <- as.character(seq(2001, 2021))
 
 progressr::with_progress({
     p <- progressr::progressor(
         steps = length(site_shapefiles), enable = TRUE, trace = FALSE
     )
     system.time({
-        result <- furrr::future_map(site_shapefiles, function(site) {
+        furrr::future_map(site_shapefiles, function(site) {
             data <- list()
             suppressMessages(sf::sf_use_s2(FALSE))
             sh_data <- get_site_contour(site)
             quad_info <- get_site_info(sh_data, site_quadrant, output_dir)
-            if (all(!file.exists(file.path(output_dir, quad_info$folder, years)))) {
-                message(paste0("No data found for ", gsub("_", " ", quad_info$folder)))
+            if (all(!file.exists(
+                file.path(output_dir, quad_info$folder, years)
+            ))) {
+                message(
+                    paste0("No data for ", gsub("_", " ", quad_info$folder))
+                )
                 return(NULL)
             }
 
             for (year in years) {
                 tif_files <- get_tif_files(output_dir, quad_info, year)
                 if (length(tif_files) == 0) {
-                    message("No tif files found for ", year, " in ", quad_info$folder)
+                    message(
+                        "No tif files for ", year, " in ", quad_info$folder
+                    )
                     next
                 }
 
                 for (tif_file in tif_files) {
-                    values <- process_raster(tif_file, sh_data$contour, quad_info, year)
-                    data[[paste(quad_info$site, year, values$variable[1], sep = "_")]] <- values
+                    values <- process_raster(
+                        tif_file, sh_data$contour, quad_info, year
+                    )
+                    data[[
+                        paste(
+                            quad_info$site, year, values$variable[1],
+                            sep = "_"
+                        )
+                    ]] <- values
                 }
             }
             return(data)
-        }, .options = furrr::furrr_options(seed = TRUE))
+        },
+        .options = furrr::furrr_options(seed = TRUE)
+        ) -> result
     }) -> time
-    # Pretty print time elapsed
     print_time_elapsed(time)
 })
 
-# combine all the dataframes in the 'result' list
+# Save raw cell values to csv
+df <- bind_dataframes(result) |> format_date_columns()
+file_path <- file.path(config$path$derived_data, "output", "cell_values.csv")
+save_data(df, file_path)
 
-
-df <- dplyr::bind_rows(purrr::list_flatten(result), .id = NULL) |>
-    dplyr::as_tibble()
-
-
-dayvars <- c("Greenup", "MidGreenup", "MidGreendown", "Dormancy", "Maturity", "Peak", "Senescence")
-
-
-
-# select where 'value' is in dayvars, then convert the value in the 'value'
-# column from number of days since 1970-01-01 to number of days since the start of the year (using the year column).
-# the final df needs to have all rows, not just the filtered ones
-
-# TODO
-
-
-
-
-#         # Saving dataset to raw list created above
-#         all_years_data_list_raw[[year]] <- combined_data_peryear_full
-
-#         # Calculating the average value for the whole woodland by weighting the pixel by the proportion of its area covered in woodland and calculating an average
-#         combined_data_peryear_full <- na.omit(combined_data_peryear_full) # removing rows with NA values
-#         combined_data_peryear_wa <- combined_data_peryear_full |>
-#             group_by(year) |> # calculating weighted average
-#             summarise(
-#                 Greenup_wa = sum(Greenup_doy * proportion_wood) / sum(proportion_wood),
-#                 MidGreenup_wa = sum(MidGreenup_doy * proportion_wood) / sum(proportion_wood),
-#                 MidGreendown_wa = sum(MidGreendown_doy * proportion_wood) / sum(proportion_wood),
-#                 Dormancy_wa = sum(Dormancy_doy * proportion_wood) / sum(proportion_wood),
-#                 Maturity_wa = sum(Maturity_doy * proportion_wood) / sum(proportion_wood),
-#                 Peak_wa = sum(Peak_doy * proportion_wood) / sum(proportion_wood),
-#                 Senescence_wa = sum(Senescence_doy * proportion_wood) / sum(proportion_wood),
-#                 EVI_Amplitude_wa = sum(Amplitude * proportion_wood) / sum(proportion_wood),
-#                 EVI_Area_wa = sum(Area * proportion_wood) / sum(proportion_wood),
-#                 .groups = "drop"
-#             )
-#         combined_data_peryear_wa <- as.data.frame(combined_data_peryear_wa)
-#         all_years_data_list_wa[[year]] <- combined_data_peryear_wa
-#     }
-#     # Merging 'per year' rows together for each shapefile
-#     # (this code would merge raw data but this is not required) all_years_per_shape <- do.call(rbind, all_years_data_list)
-#     all_years_per_shape_wa <- do.call(rbind, all_years_data_list_wa)
-#     # Saving dataset to excel file
-#     file_path_wa <- file.path(config$path$derived_data, shapefile, "processed_data_wa.csv")
-#     write.csv(all_years_per_shape_wa, file.path(file_path_wa))
-
-#     # Saving dataset to list in r
-#     all_years_per_shape_list[[shapefile]] <- all_years_per_shape
-# }
+# Save weighted average values to csv
+df_wa <- weighted_average(df)
+file_path_wa <- file.path(config$path$derived_data, "output", "population_values.csv")
+save_data(df_wa, file_path_wa)
