@@ -102,6 +102,8 @@ variable_equivalences <- c(
     "Senescence" = "Onset_Greenness_Decrease"
 )
 
+- [ ] Failed to crop raster for DIN quadrant 5: [crop] extents do not overlap
+
 ```
 
 ## Bugs and Issues
