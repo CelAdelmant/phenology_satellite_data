@@ -145,7 +145,8 @@ layers <- dplyr::as_tibble(do.call(rbind, dfs))
 # save layers to a csv file in the derived data folder
 layers_file <- file.path(config$path$derived_data, "tmp", "layers.csv")
 # create the directory if it doesn't exist
-if (!dir.exists(dirname(layers_file))) dir.create(dirname(layers_file))
+if (!dir.exists(dirname(layers_file))) dir.create(dirname(layers_file),
+    recursive = TRUE)
 write.csv(layers, layers_file, row.names = FALSE)
 
 
