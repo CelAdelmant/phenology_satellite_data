@@ -21,6 +21,7 @@ default:
   ncores: !expr future::availableCores()
   futureplan: !expr future::plan("multisession", workers = future::availableCores())
   progress_aes: !expr progressr::handlers("cli")
+  scinot: !expr options(scipen = 999)
 
     
 
