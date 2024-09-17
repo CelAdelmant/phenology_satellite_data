@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
+<Document>
+	<name>BUU_patch_1.kml</name>
+	<StyleMap id="__managed_style_0A56E151542CB56D70996">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#failed7</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#failed06</styleUrl>
+		</Pair>
+	</StyleMap>
+	<Style id="failed06">
+	</Style>
+	<Style id="failed7">
+	</Style>
+	<Placemark>
+		<name>BUU_patch_1</name>
+		<open>1</open>
+		<styleUrl>#__managed_style_0A56E151542CB56D70996</styleUrl>
+		<Polygon>
+			<tessellate>1</tessellate>
+			<outerBoundaryIs>
+				<LinearRing>
+					<coordinates>
+						5.757777264038677,52.00537298628274,0 5.76421561565626,52.0101906392845,0 5.769909766630215,52.0104585796038,0 5.768528265440489,52.01406782866435,0 5.770768570589442,52.0217931274239,0 5.761332667462369,52.02122066276518,0 5.755334958656344,52.02114378451569,0 5.754927942050026,52.02058774661351,0 5.75295147551341,52.02055153795643,0 5.75221176964903,52.020986908626,0 5.75115273807973,52.02119293276161,0 5.745198398987426,52.02131595609963,0 5.727536067939027,52.02227811750726,0 5.723834325479547,52.02206635037997,0 5.723754573763456,52.02087209660549,0 5.729373905349584,52.02024045472187,0 5.729491991826501,52.01795854238249,0 5.741230312304008,52.01551406317513,0 5.740161901049062,52.00975538580271,0 5.757777264038677,52.00537298628274,0 
+					</coordinates>
+				</LinearRing>
+			</outerBoundaryIs>
+		</Polygon>
+	</Placemark>
+</Document>
+</kml>
