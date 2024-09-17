@@ -37,36 +37,19 @@ and uses the output of other dedicated repositories:
 ### Project Organization
 
 ```text
-...
+.
 ├── data
-│   ├── derived v                derived data, created by scripts
-│   ├── fits                       model fits (brms .rds objects)
-│   └── raw                         original data, never modified
-├── output
-│   └── figures
-├── R                                          reusable functions
-│   ├── io.R
-│   ├── rplot.R
-│   └── utils.R
-├── renv 
-├── scripts                        code to reproduce the analysis
-│   ├── maps
-│   ├── models
-│   │   ├── fit
-│   │   ├── plot
-│   │   └── report
-│   └── plots                extra plots (supplementary material)
-├── scripts
-│   ├── setup
-│   └── pipeline.sh
-...
-├── .Rprofile                             main configuration file
-├── config.yml                                 configuration file
-├── dependencies.R                               IDE dependencies
-├── LICENSE.md
-├── README.md
-├── renv.lock                     lockfile detailing dependencies
-└── birdsong-demography.Rproj                RStudio project file
+│   ├── derived
+│   │   └── satellite
+│   │       └── quadrant_1
+│   │           ├── 2001
+│   │           └── 2002
+│   ├── metadata
+│   └── raw
+│       ├── satellite
+│       │   └── quadrant_1
+│       └── shapefiles
+
 ```
 
 ## Getting Started
@@ -98,19 +81,30 @@ renv::restore()
 ```
 Depending on your system, this may take a while, and you will likely be prompted (as in installation will just fail) to install some system dependencies.
 
-## Running the analyses
 
-### Models
-Running the script that prepares the derived datasets is not necessary: you already downloaded the derived data from [OSF]()
+## TODO
 
-If you do want to do this to make sure things work correctly, just `cd` into the `./scripts` folder and run `bash pipeline.sh` in the terminal. 
+  - [ ] Rename quadrant folders to remove capital letters and whitespaces
+  - [ ] Make explicit the variable name equivalences:
 
-Similarly, the model fits are already in the data, so they will not refit automatically. If you want to refit them, change `file_refit = "never"` to `file_refit = "always"` in the relevant function calls.
+```r
 
-### Figures and model output
+variable_equivalences <- c(
+    "Dormancy" = "Onset_Dormancy",
+    "Amplitude" = "EVI_Amplitude",
+    "Area" = "EVI_Area",
+    "Minimum" = "Minimum_EVI",
+    "Greenup" = "Onset_Greenness_Increase",
+    "Maturity" = "Onset_Maturity",
+    "MidGreendown" = "Middle_Greenness_Decrease",
+    "MidGreenup" = "Middle_Greenness_Increase",
+    "Peak" = "Date_of_Peak",
+    "Senescence" = "Onset_Greenness_Decrease"
+)
 
-Any scripts outside of the `./scripts/setup` and  `./scripts/models/fit` folders can be run independently. Where there is an order constraint, this is indicated in the script name.
+- [ ] Failed to crop raster for DIN quadrant 5: [crop] extents do not overlap
 
+```
 
 ## Bugs and Issues
 
