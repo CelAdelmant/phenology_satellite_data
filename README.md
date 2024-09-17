@@ -1,5 +1,5 @@
 
-![Title Badge](https://img.shields.io/badge/Bird_Song_Culture_%26_Demography-k?style=for-the-badge&labelColor=d99c2b&color=d99c2b) ![R Badge](https://img.shields.io/badge/v4.2-4295B3?style=for-the-badge&logo=r&logoColor=white)
+![Title Badge](https://img.shields.io/badge/phenosat-k?style=for-the-badge&labelColor=d99c2b&color=d99c2b) ![R Badge](https://img.shields.io/badge/v4.2-4295B3?style=for-the-badge&logo=r&logoColor=white)
 
 
 
@@ -22,16 +22,11 @@
 
 This repository includes the following main features,
 
-- An RStudio project [`birdsong-demography.Rproj`](./birdsong-demography.Rproj)
+- An RStudio project [`phenosat.Rproj`](./phenosat.Rproj)
 - Package dependency management using [`renv`](https://github.com/rstudio/renv/)
 - Configuration using [`config`](https://github.com/rstudio/config)
 - A [`scripts`](./scripts) directory with the code necessary to reproduce the analysis and figures in this paper.
 - A [`R`](./R) folder for R source code and reusable functions
-
-and uses the output of other dedicated repositories: 
-
-- [Wytham Great Tit Song Dataset](https://github.com/nilomr/great-tit-hits-setup)
-- [Song Type Validation](https://github.com/nilomr/wytham-songtype-validation)
 
 
 ### Project Organization
@@ -60,10 +55,10 @@ and uses the output of other dedicated repositories:
 Clone this repository to your local computer using the following command in the terminal:
   
 ```bash
-git clone https://github.com/nilomr/birdsong-demography.git
+git clone https://github.com/nilomr/satellite-tree-phenology.git
 ```
 
-Then, download the data from [OSF](), replacing the `data` folder in the repository with the downloaded `data` folder[^1].
+ - [] TODO: Then, download the data from [OSF](), replacing the `data` folder in the repository with the downloaded `data` folder[^1].
 
 
 ### Dependencies
@@ -84,7 +79,7 @@ Depending on your system, this may take a while, and you will likely be prompted
 
 ## TODO
 
-  - [ ] Rename quadrant folders to remove capital letters and whitespaces
+  - [x] Rename quadrant folders to remove capital letters and whitespaces
   - [ ] Make explicit the variable name equivalences:
 
 ```r
@@ -101,8 +96,6 @@ variable_equivalences <- c(
     "Peak" = "Date_of_Peak",
     "Senescence" = "Onset_Greenness_Decrease"
 )
-
-- [ ] Failed to crop raster for DIN quadrant 5: [crop] extents do not overlap
 
 ```
 
