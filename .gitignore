@@ -192,3 +192,10 @@ flycheck_*.el
 
 # network security
 /network-security.data
+
+
+# Project-specific
+/data/derived
+data/derived/*
+data/raw/satellite/
+scripts/slurm-out
